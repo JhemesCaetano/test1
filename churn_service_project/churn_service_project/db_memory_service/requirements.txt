@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+redis
+python-dotenv
+fastapi
+uvicorn
+redis
+python-dotenv
