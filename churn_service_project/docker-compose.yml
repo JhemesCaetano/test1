@@ -1,0 +1,86 @@
+# Arquivo: ./docker-compose.yml
+
+services:
+  # --- Dependências Base ---
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+
+  # --- APIs Falsas para Testes ---
+  mock_customers_api:
+    build:
+      context: . 
+      dockerfile: ./mock_customers_api/Dockerfile
+    ports:
+      - "9001:9001"
+
+  mock_offers_api:
+    build:
+      context: . 
+      dockerfile: ./mock_offers_api/Dockerfile
+    ports:
+      - "9000:9000"
+
+  # --- Microsserviços da Aplicação ---
+  db_memory_service:
+    build:
+      context: . 
+      dockerfile: ./db_memory_service/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+  service_flow:
+    build:
+      context: . 
+      dockerfile: ./service_flow/Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_MEMORY_URL=http://db_memory_service:8000
+      - CHURN_URL=http://churn_flow:8001/churn
+      - CUSTOMER_API_URL=http://mock_customers_api:9001
+      - REDIS_URL=redis://redis:6379/0  # <-- CORREÇÃO ADICIONADA AQUI
+    depends_on:
+      - db_memory_service
+      - mock_customers_api
+      - redis
+
+  churn_flow:
+    build:
+      context: . 
+      dockerfile: ./churn_flow/Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_MEMORY_URL=http://db_memory_service:8000
+      - SERVICE_URL=http://service_flow:8002/service
+      - OFFERS_API_URL=http://mock_offers_api:9000
+      - REDIS_URL=redis://redis:6379/0  # <-- CORREÇÃO ADICIONADA AQUI
+    depends_on:
+      - db_memory_service
+      - mock_offers_api
+      - service_flow
+      - redis
+
+  # Orquestrador Principal
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DB_MEMORY_URL=http://db_memory_service:8000
+      - SERVICE_FLOW_URL=http://service_flow:8002/service
+      - CHURN_URL=http://churn_flow:8001/churn
+    depends_on:
+      - churn_flow
+      - service_flow
